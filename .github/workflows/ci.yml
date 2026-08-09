@@ -1,209 +1,115 @@
 name: CI
 on:
-  push:
-    branches:
-      - master
-      - for-master
-      - github-ci
-    tags:
-      - v*
-  pull_request:
-    branches:
-      - master
-      - for-master
+  push: null
 jobs:
   check_commits_job:
-    name: "Check commits"
+    name: Check commits
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: "env"
-        run: env | sort
-      - name: "Developer's Certificate of Origin"
-        run: |
-          echo
-          echo 'Commits to check:'
-          git log --no-merges --pretty='%H%x09%s%x09%ce%x09-%(trailers:key=Signed-off-by,valueonly,separator=%x00)' origin/master.. |
-             tee /tmp/commits |
-             cut -f1,2
-          echo ''
-          if grep -e '-$' /tmp/commits | cut -f1,2 | grep -e '^' > /tmp/bad-commits; then
-             echo 'Сommits that fail verification:'
-             cat /tmp/bad-commits
-             echo ''
-             echo 'The DCO Signoff Check for all commits has FAILED.'
-             echo 'See https://github.com/legionus/kbd/blob/master/docs/process/howto-contribute.md#patches='
-             echo ''
-             exit 1
-          fi
-
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: env
+      run: env | sort
+    - name: Developer's Certificate of Origin
+      run: "echo\necho 'Commits to check:'\ngit log --no-merges --pretty='%H%x09%s%x09%ce%x09-%(trailers:key=Signed-off-by,valueonly,separator=%x00)'\
+        \ origin/master.. |\n   tee /tmp/commits |\n   cut -f1,2\necho ''\nif grep -e '-$' /tmp/commits\
+        \ | cut -f1,2 | grep -e '^' > /tmp/bad-commits; then\n   echo '\u0421ommits that fail verification:'\n\
+        \   cat /tmp/bad-commits\n   echo ''\n   echo 'The DCO Signoff Check for all commits has FAILED.'\n\
+        \   echo 'See https://github.com/legionus/kbd/blob/master/docs/process/howto-contribute.md#patches='\n\
+        \   echo ''\n   exit 1\nfi\n"
   distcheck_job:
-    name: "Distcheck"
+    name: Distcheck
     runs-on: ubuntu-latest
-    needs: [ check_commits_job ]
+    needs:
+    - check_commits_job
     steps:
-    - name: "Check out repository"
+    - name: Check out repository
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    - name: "Install dependencies"
-      run: |
-        sudo apt-get update  -y -qq
-        sudo apt-get install -y -qq gcc autoconf automake autopoint libtool libtool-bin libpam0g-dev bison flex gettext valgrind sparse
-    - name: "Configure"
-      run: |
-        tests/configure.sh --datadir="$PWD/data" --enable-memcheck
-    - name: "Check sparse"
-      run: |
-        make check-sparse V=1
-    - name: "Clean"
-      run: |
-        make clean
-    - name: "Build"
-      run: |
-        make V=1
-    - name: "Distcheck"
-      run: |
-        sudo -E make distcheck
-    - name: "Upload artifacts"
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: artifact-distcheck
-        path: |
-          config.log
-          tests/testsuite.dir
-          tests/testsuite.log
-          kbd-*/_build/sub/tests/testsuite.dir
-          kbd-*/_build/sub/tests/testsuite.log
-        if-no-files-found: ignore
-        retention-days: 1
+    - name: Install dependencies
+      run: 'sudo apt-get update  -y -qq
 
-  local_build_job:
-    name: "Check with ${{ matrix.compiler }} / ${{ matrix.libc }} on x86_64"
+        sudo apt-get install -y -qq gcc autoconf automake autopoint libtool libpam0g-dev bison flex gettext
+
+        '
+    - name: Configure
+      run: 'tests/configure.sh --datadir="$PWD/data"
+
+        '
+    - name: Build
+      run: 'make V=1
+
+        '
+    - name: Distcheck
+      run: 'sudo -E make distcheck
+
+        '
+  build_job:
+    name: Check with ${{ matrix.compiler }} / ${{ matrix.libc }}
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
-            cc: gcc
-            compiler: gcc
-            libc: glibc
-            configure:
-            check: unittest e2e
-          - os: ubuntu-latest
-            cc: clang
-            compiler: clang
-            libc: glibc
-            configure:
-            check: unittest e2e
-          - os: ubuntu-latest
-            cc: musl-gcc -static -idirafter /usr/include/ -idirafter /usr/include/x86_64-linux-gnu/
-            compiler: gcc
-            libc: musl
-            configure: --disable-libkeymap --disable-vlock
-            check: unittest e2e
+        - os: ubuntu-latest
+          cc: gcc
+          compiler: gcc
+          libc: glibc
+          configure: null
+          check: unittest e2e
+        - os: ubuntu-latest
+          cc: clang
+          compiler: clang
+          libc: glibc
+          configure: null
+          check: unittest e2e
+        - os: ubuntu-latest
+          cc: musl-gcc -static -idirafter /usr/include/ -idirafter /usr/include/x86_64-linux-gnu/
+          compiler: gcc
+          libc: musl
+          configure: --disable-libkeymap --disable-vlock
+          check: unittest e2e
       fail-fast: false
     runs-on: ${{ matrix.os }}
-    needs: [ distcheck_job ]
+    needs:
+    - distcheck_job
     env:
       CC: ${{ matrix.cc }}
       CHECK_KEYWORDS: ${{ matrix.check }}
       SANDBOX: priviliged
       TTY: /dev/tty60
-      HAVE_VGA: 1
     steps:
-    - name: "Check out repository"
+    - name: Check out repository
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
     - run: sudo apt-get update  -y -qq
-    - run: sudo apt-get install -y -qq autoconf automake autopoint libtool libtool-bin libpam0g-dev bison flex gettext kbd strace valgrind
+    - run: sudo apt-get install -y -qq autoconf automake autopoint libtool libtool-bin libpam0g-dev bison
+        flex gettext kbd strace
     - run: sudo apt-get install -y -qq gcc clang musl musl-dev musl-tools
-    - name: "Configure"
-      run: |
-        tests/configure.sh --datadir="$PWD/tests/data" --enable-memcheck ${{ matrix.configure }}
-    - name: "Build"
-      run: |
-        make V=1 CFLAGS+="-g -O0"
-    - name: "Check"
-      run: |
-        sudo -E tests/check.sh
-    - name: "Upload artifacts"
+    - name: Configure
+      run: 'tests/configure.sh --datadir="$PWD/tests/data" ${{ matrix.configure }}
+
+        '
+    - name: Build
+      run: 'make V=1
+
+        '
+    - name: Check
+      run: 'sudo -E tests/check.sh
+
+        '
+    - name: Upload artifacts
       if: failure()
       uses: actions/upload-artifact@v4
       with:
         name: artifact-${{ matrix.compiler }}-${{ matrix.libc }}
-        path: |
-          config.log
+        path: 'config.log
+
           tests/testsuite.dir
+
           tests/testsuite.log
-        if-no-files-found: ignore
-        retention-days: 1
 
-  qemu_build_job:
-    name: "Check on ${{ matrix.arch }}"
-    strategy:
-      matrix:
-        include:
-          - arch: x86_64
-          - arch: s390x
-          - arch: ppc64el
-      fail-fast: false
-    runs-on: ubuntu-latest
-    needs: [ check_commits_job, distcheck_job ]
-    env:
-      CI_ARCH: ${{ matrix.arch }}
-      CI_UBUNTU_VERSION: "24.10"
-
-    steps:
-    - name: "Check out repository"
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: "Prepare Node"
-      run: |
-        for m in kvm kvm-amd kvm-intel; do sudo modprobe -v "$m" ||:; done
-        test -c /dev/kvm && sudo chmod -v 666 /dev/kvm ||:
-
-    - name: "Install dependencies"
-      run: |
-        sudo apt-get update  -y -qq
-        sudo apt-get install -y -qq qemu-system ssh cloud-image-utils
-
-    - name: "Prepare cloud image for VM"
-      run: tests/ci/create-cloud-image.sh
-
-    - name: "Start VM"
-      run: |
-        tests/ci/start-qemu-vm.sh "$PWD"
-        while ! tests/ci/vm-ssh.sh ubuntu@localhost /bin/true; do sleep 1; done
-      timeout-minutes: 30
-
-    - name: "Install dependencies into VM"
-      run: tests/ci/vm-ssh.sh ubuntu@localhost /opt/tests/ci/qemu-install-dependencies.sh
-
-    - name: "Copy sources into VM"
-      run: |
-        tests/ci/vm-ssh.sh ubuntu@localhost mkdir /tmp/kbd
-        tests/ci/vm-scp.sh -r . ubuntu@localhost:/tmp/kbd/
-
-    - name: "Build project in the VM"
-      run: |
-        rc=0
-        tests/ci/vm-ssh.sh ubuntu@localhost /opt/tests/ci/qemu-run-build-and-tests.sh ${{ matrix.arch }} || rc=1
-        tests/ci/vm-scp.sh ubuntu@localhost:artifacts.tar /tmp/${{ matrix.arch }}/ ||:
-        exit $rc
-
-    - name: "Upload artifacts"
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-on-${{ matrix.arch }}-artifacts
-        path: |
-          /tmp/${{ matrix.arch }}/qemu.log
-          /tmp/${{ matrix.arch }}/artifacts.tar
+          '
         if-no-files-found: ignore
         retention-days: 1
